@@ -10,6 +10,63 @@ Ponto de entrada da aplicação. Responsável por:
 from core.metadata import analisar_video
 
 
+def detectar_playlist(url):
+    """
+    Detecta se a URL contém parâmetros de playlist.
+    
+    Args:
+        url (str): URL original do YouTube.
+    
+    Returns:
+        tuple: (url_limpa, tem_playlist, parametros)
+    """
+    parametros = ""
+    tem_playlist = False
+    
+    if '&' in url:
+        partes = url.split('&')
+        url_limpa = partes[0]
+        parametros = '&'.join(partes[1:])
+        
+        # Verifica se há parâmetros de playlist
+        if 'list=' in parametros or 'start_radio=' in parametros:
+            tem_playlist = True
+    else:
+        url_limpa = url
+    
+    return url_limpa, tem_playlist, parametros
+
+
+def exibir_aviso_playlist(parametros):
+    """
+    Exibe um aviso formatado sobre detecção de playlist.
+    
+    Args:
+        parametros (str): String com os parâmetros detectados.
+    
+    Returns:
+        bool: True se usuário deseja continuar, False caso contrário.
+    """
+    print("\n" + "⚠️ " * 15)
+    print("\n🚨 ATENÇÃO 🚨\n")
+    print(f"Seu link possui uma playlist embutida:")
+    print(f"  {parametros}\n")
+    print("Se você não desejava analisar TODA a playlist,")
+    print("por favor negue a autorização.\n")
+    print("⚠️ " * 15 + "\n")
+    
+    while True:
+        resposta = input("Deseja analisar TODA a playlist? [Sim/Não]: ").strip().lower()
+        
+        if resposta in ['sim', 's']:
+            return True
+        elif resposta in ['não', 'nao', 'n']:
+            print("\n❌ Análise cancelada pelo usuário.\n")
+            return False
+        else:
+            print("❌ Resposta inválida. Digite 'Sim' ou 'Não'.\n")
+
+
 def limpar_url(url):
     """
     Remove parâmetros extras da URL (como &list=).
@@ -72,7 +129,7 @@ def exibir_metadados(metadata):
 def main():
     """
     Função principal da aplicação.
-    Orquestra o fluxo: entrada → limpeza → análise → exibição.
+    Orquestra o fluxo: entrada → detecção → limpeza → análise → exibição.
     """
     print("\n🎬 SimpleDL - Analisador de Vídeos\n")
     
@@ -84,8 +141,13 @@ def main():
         print("❌ Erro: URL não pode estar vazia!")
         return
     
-    # Limpa a URL removendo parâmetros extras
-    url_limpa = limpar_url(url)
+    # Detecta e alerta sobre playlists
+    url_limpa, tem_playlist, parametros = detectar_playlist(url)
+    
+    if tem_playlist:
+        if not exibir_aviso_playlist(parametros):
+            return
+    
     print(f"\n⏳ Analisando: {url_limpa}...")
     
     # Chama a função de análise
