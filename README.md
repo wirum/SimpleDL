@@ -26,7 +26,7 @@ O projeto tem como objetivo unir facilidade de uso, organização de código e p
 - Bibliotecas de interface gráfica
 
 ## 📂 Estrutura do projeto
-
+```
 SimpleDL/
 │
 ├── main.py          # Interface principal
@@ -34,25 +34,25 @@ SimpleDL/
 ├── converter.py     # Conversor de mídia
 ├── requirements.txt # Dependências
 └── README.md        # Documentação
-
+```
 ## ⚙️ Instalação
 
 Clone o repositório:
-
+```
 git clone https://github.com/seu-usuario/SimpleDL.git
-
+```
 Acesse a pasta:
-
+```
 cd SimpleDL
-
+```
 Instale as dependências:
-
+```
 pip install -r requirements.txt
-
+```
 Execute o programa:
-
+```
 python main.py
-
+```
 ## 📦 Dependências
 
 O SimpleDL utiliza:
@@ -80,7 +80,7 @@ O SimpleDL foi criado como um projeto de aprendizado e desenvolvimento, exploran
 
 ## 👨‍💻 Autor
 
-Desenvolvido por Lucas.
+Desenvolvido por Eu.. e um pouco de IA também ksks
 
 ---
 
