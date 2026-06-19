@@ -1,6 +1,6 @@
-
 <h1 align="center">SimpleDL</h1>
 
+<p align="center">
   Um downloader simples e eficiente desenvolvido em Python.
 </p>
 
