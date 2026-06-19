@@ -29,11 +29,11 @@ O projeto tem como objetivo unir facilidade de uso, organização de código e p
 ```
 SimpleDL/
 │
-├── main.py          # Interface principal
-├── downloader.py    # Sistema de download
-├── converter.py     # Conversor de mídia
-├── requirements.txt # Dependências
-└── README.md        # Documentação
+├── main.py            -> Interface principal
+├── downloader.py      -> Sistema de download
+├── converter.py       -> Conversor de mídia
+├── requirements.txt   -> Dependências
+└── README.md          -> Documentação
 ```
 ## ⚙️ Instalação
 
