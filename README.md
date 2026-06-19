@@ -1,6 +1,7 @@
-# SimpleDL
-
 <p align="center">
+  # SimpleDL
+
+
   Um downloader simples e eficiente desenvolvido em Python.
 </p>
 
