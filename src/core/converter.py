@@ -2,7 +2,7 @@ import subprocess
 from pathlib import Path
 
 
-def converter_video(arquivo_entrada, formato_saida="mp4"):
+def converter_video(arquivo_entrada: str, formato_saida: str = "mp4") -> str:
     """
     Converte um arquivo usando FFmpeg.
 
@@ -12,23 +12,30 @@ def converter_video(arquivo_entrada, formato_saida="mp4"):
 
     Returns:
         str: Caminho do arquivo convertido.
-    """
 
+    Raises:
+        FileNotFoundError: Se o arquivo de entrada não existir.
+        RuntimeError: Se o FFmpeg retornar erro durante a conversão.
+    """
     entrada = Path(arquivo_entrada)
+
+    if not entrada.exists():
+        raise FileNotFoundError(f"Arquivo não encontrado: {entrada}")
 
     saida = entrada.with_suffix(f".{formato_saida}")
 
     comando = [
         "ffmpeg",
-        "-i",
-        str(entrada),
+        "-i", str(entrada),
         str(saida)
     ]
 
-    subprocess.run(
-        comando,
-        capture_output=True,
-        text=True
-    )
+    resultado = subprocess.run(comando)
+
+    if resultado.returncode != 0:
+        raise RuntimeError(
+            f"FFmpeg falhou ao converter '{entrada}' para '{formato_saida}' "
+            f"(código {resultado.returncode})"
+        )
 
     return str(saida)
