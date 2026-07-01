@@ -44,15 +44,20 @@ class DownloadCancelled(Exception):
     pass
 
 
-def _build_ydl_opts(out_dir: Path, fmt: str, quality: str) -> dict:
+def _build_ydl_opts(out_dir: Path, fmt: str, quality: str, filename_template: Optional[str] = None) -> dict:
     """Map simple format/quality choices into yt_dlp options.
 
     This is intentionally conservative: it sets sensible defaults and keeps
     options readable. For advanced users they can edit the downloader.
     """
     out_dir = Path(out_dir)
+    if filename_template:
+        outtmpl = str(out_dir / (filename_template + ".%(ext)s"))
+    else:
+        outtmpl = str(out_dir / "%(title)s.%(ext)s")
+
     opts: dict = {
-        "outtmpl": str(out_dir / "%(title)s.%(ext)s"),
+        "outtmpl": outtmpl,
         # avoid console clutter from our side; yt-dlp verbosity will be allowed
         "noprogress": True,
     }
@@ -99,11 +104,28 @@ def _build_ydl_opts(out_dir: Path, fmt: str, quality: str) -> dict:
     return opts
 
 
-def download_video(url: str, out_dir: str | Path, fmt: str = "mp4", quality: str = "best") -> None:
+def _load_project_config():
+    """Load project config module if available.
+
+    Tries multiple import paths to be robust when running from src/ or from repo root.
+    """
+    try:
+        import config as project_config
+        return project_config
+    except Exception:
+        try:
+            from src import config as project_config
+            return project_config
+        except Exception:
+            return None
+
+
+def download_video(url: str, out_dir: str | Path, fmt: str = "mp4", quality: str = "best", filename_template: Optional[str] = None) -> None:
     """Download a video/audio to out_dir.
 
     - fmt: desired final format (mp4/mp3/m4a/mkv)
     - quality: simple quality hint (best/720p/480p/360p/audio-only)
+    - filename_template: optional sanitized filename (without extension) to use instead of video title
     """
     if YoutubeDL is None:
         raise RuntimeError("yt_dlp is required. Install with: pip install yt-dlp")
@@ -137,9 +159,16 @@ def download_video(url: str, out_dir: str | Path, fmt: str = "mp4", quality: str
         except Exception:
             logger.exception("Erro no hook de progresso")
 
-    ydl_opts = _build_ydl_opts(Path(out_dir), fmt, quality)
-    # ensure yt-dlp uses our logger (so errors/warnings appear in logs)
+    ydl_opts = _build_ydl_opts(Path(out_dir), fmt, quality, filename_template)
+
+    # route yt-dlp logs through our logger and allow its warnings to be shown
     ydl_opts["logger"] = logger
+    # optionally enable remote_components if configured
+    project_config = _load_project_config()
+    if project_config:
+        rc = project_config.CONFIG.get("remote_components")
+        if rc:
+            ydl_opts["remote_components"] = rc
     ydl_opts["progress_hooks"] = [progress_hook]
 
     try:
