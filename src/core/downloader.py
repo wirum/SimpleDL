@@ -53,8 +53,7 @@ def _build_ydl_opts(out_dir: Path, fmt: str, quality: str) -> dict:
     out_dir = Path(out_dir)
     opts: dict = {
         "outtmpl": str(out_dir / "%(title)s.%(ext)s"),
-        # avoid console clutter
-        "quiet": True,
+        # avoid console clutter from our side; yt-dlp verbosity will be allowed
         "noprogress": True,
     }
 
@@ -83,6 +82,7 @@ def _build_ydl_opts(out_dir: Path, fmt: str, quality: str) -> dict:
             # e.g. 720p -> bestvideo[height<=720]+bestaudio/best
             try:
                 h = int(quality[:-1])
+                # some servers expect exact format; keep conservative expression
                 opts["format"] = f"bestvideo[height<=?{h}]+bestaudio/best"
             except Exception:
                 opts["format"] = "best"
@@ -138,6 +138,8 @@ def download_video(url: str, out_dir: str | Path, fmt: str = "mp4", quality: str
             logger.exception("Erro no hook de progresso")
 
     ydl_opts = _build_ydl_opts(Path(out_dir), fmt, quality)
+    # ensure yt-dlp uses our logger (so errors/warnings appear in logs)
+    ydl_opts["logger"] = logger
     ydl_opts["progress_hooks"] = [progress_hook]
 
     try:
