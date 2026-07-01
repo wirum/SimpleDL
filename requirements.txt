@@ -1,1 +1,6 @@
-yt-dlp>=2024.01.01
+# Requirements for SimpleDL
+# Add packages needed to run CLI and GUI features
+yt-dlp
+pillow
+customtkinter
+PySide6

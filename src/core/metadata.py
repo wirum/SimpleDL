@@ -5,67 +5,68 @@ Este módulo é responsável por extrair informações
 de vídeos usando yt-dlp sem fazer o download.
 """
 
-import yt_dlp
+import logging
+from typing import Optional
+
+# Import yt_dlp lazily/optionally so missing dependency doesn't crash at import time.
+try:
+    import yt_dlp
+    from yt_dlp.utils import DownloadError
+    YTDLP_AVAILABLE = True
+except Exception:
+    yt_dlp = None  # type: ignore
+    DownloadError = Exception
+    YTDLP_AVAILABLE = False
 
 
-def analisar_video(url):
+def analisar_video(url: str) -> Optional[dict]:
     """
     Analisa os metadados de um vídeo a partir de uma URL.
-    
+
     Args:
         url (str): URL do vídeo já limpa (sem parâmetros extras).
-    
+
     Returns:
         dict: Dicionário contendo os metadados do vídeo ou None se houver erro.
-              As chaves retornadas são:
-              - title: Título do vídeo
-              - uploader: Nome do canal/criador
-              - duration: Duração em segundos
-              - duration_string: Duração formatada (HH:MM:SS)
-              - thumbnail: URL da thumbnail
-              - view_count: Número de visualizações
-              - webpage_url: URL da página
-    
+
     Raises:
-        ValueError: Quando a URL é inválida ou o vídeo não pode ser acessado.
+        RuntimeError: Se a dependência yt-dlp não estiver instalada.
+        ValueError: Quando a URL é inválida.
     """
-    
+    logger = logging.getLogger("simpledl.metadata")
+
+    if not YTDLP_AVAILABLE:
+        # Raise at runtime with a helpful message; callers should catch and show to users.
+        raise RuntimeError("Dependência ausente: instale 'yt-dlp' (pip install yt-dlp)")
+
     try:
         # Validação básica da URL
         if not url or not isinstance(url, str):
             raise ValueError("URL inválida: deve ser uma string não-vazia")
-        
+
         # Configuração do yt-dlp para apenas extrair metadados
-        # Não faz download (download=False)
         ydl_opts = {
-            'quiet': False,          # Mostra warnings
+            "quiet": True,
+            # não baixar, só extrair
         }
-        
-        # Usa um contexto (with) para garantir que os recursos sejam liberados
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Extrai as informações do vídeo
             info = ydl.extract_info(url, download=False)
-        
-        # Monta o dicionário com os metadados desejados
-        # Usa .get() para evitar KeyError se algum campo não existir
+
         metadata = {
-            'title': info.get('title', 'Desconhecido'),
-            'uploader': info.get('uploader', 'Desconhecido'),
-            'duration': info.get('duration', 0),
-            'duration_string': info.get('duration_string', '00:00'),
-            'thumbnail': info.get('thumbnail', ''),
-            'view_count': info.get('view_count', 0),
-            'webpage_url': info.get('webpage_url', url),
+            "title": info.get("title", "Desconhecido"),
+            "uploader": info.get("uploader", "Desconhecido"),
+            "duration": info.get("duration", 0),
+            "duration_string": info.get("duration_string", "00:00"),
+            "thumbnail": info.get("thumbnail", ""),
+            "view_count": info.get("view_count", 0),
+            "webpage_url": info.get("webpage_url", url),
         }
-        
         return metadata
-    
-    except yt_dlp.utils.DownloadError as e:
-        # Erro ao fazer download/extrair informações
-        print(f"❌ Erro ao acessar o vídeo: {e}")
+
+    except DownloadError as e:
+        logger.warning("Erro ao acessar o vídeo: %s", e)
         return None
-    
     except Exception as e:
-        # Qualquer outro erro inesperado
-        print(f"❌ Erro desconhecido: {e}")
+        logger.exception("Erro ao analisar metadados")
         return None
