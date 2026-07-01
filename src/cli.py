@@ -9,6 +9,7 @@ def run_cli():
       - :q or quit -> exit
       - :folder -> set output folder
       - :logs -> show log file path
+      - :format -> choose output format/quality (persisted)
     """
     import os
     import sys
@@ -19,6 +20,10 @@ def run_cli():
     default_out = Path.cwd() / "downloads"
     out_dir = default_out
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # default format/quality
+    current_format = "mp4"  # mp4, mp3, m4a, mkv
+    current_quality = "best"  # best, 720p, 480p, 360p, audio-only
 
     # logging info
     log_path = Path.cwd() / "logs"
@@ -35,8 +40,9 @@ def run_cli():
     )
 
     print("SimpleDL CLI — loop mode. Ctrl+C cancels current download.")
-    print("Commands: ':q' or 'quit' to exit, ':folder' to choose folder, ':logs' to show log file")
+    print("Commands: ':q' or 'quit' to exit, ':folder' to choose folder, ':logs' to show log file, ':format' to set format/quality")
     print(f"Current output folder: {out_dir}")
+    print(f"Current format: {current_format}, quality: {current_quality}")
     try:
         while True:
             try:
@@ -66,11 +72,26 @@ def run_cli():
             if txt.lower() in (":logs", "logs"):
                 print(f"Log em: {logfile}")
                 continue
+            if txt.lower() in (":format", "format"):
+                fmt = input("Formato desejado (mp4/mp3/m4a/mkv) [current: %s]: " % current_format).strip().lower()
+                if fmt:
+                    if fmt not in ("mp4", "mp3", "m4a", "mkv"):
+                        print("Formato inválido — mantendo atual")
+                    else:
+                        current_format = fmt
+                qual = input("Qualidade (best/720p/480p/360p/audio-only) [current: %s]: " % current_quality).strip().lower()
+                if qual:
+                    if qual not in ("best", "720p", "480p", "360p", "audio-only"):
+                        print("Qualidade inválida — mantendo atual")
+                    else:
+                        current_quality = qual
+                print(f"Formato atualizado: {current_format}, qualidade: {current_quality}")
+                continue
 
             url = txt
             try:
-                print(f"Iniciando download de: {url}")
-                download_video(url, out_dir)
+                print(f"Iniciando download de: {url} (format={current_format}, quality={current_quality})")
+                download_video(url, out_dir, fmt=current_format, quality=current_quality)
             except KeyboardInterrupt:
                 # download_video captures cancellation, but also protect here
                 print("Download cancelado pelo usuário")
