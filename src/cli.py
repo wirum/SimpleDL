@@ -1,5 +1,8 @@
 from core.downloader import download_video
 from core.metadata import analisar_video
+from logger import setup_logging, log_download_context, log_download_result
+from errors import user_friendly_error, DownloadError, handle_yt_dlp_error
+import time
 
 
 def run_cli():
@@ -42,29 +45,26 @@ def run_cli():
         current_format = project_config.CONFIG.get("default_format", "mp4")
         current_quality = project_config.CONFIG.get("default_quality", "best")
         config_path = project_config.CONFIG_PATH
+        log_path = project_config.CONFIG.get("log_path", "./logs/downloads.log")
+        verbosity = project_config.CONFIG.get("verbosity", "info")
     else:
         current_format = "mp4"
         current_quality = "best"
         config_path = Path.cwd() / "config.yml"
+        log_path = "./logs/downloads.log"
+        verbosity = "info"
 
-    # logging info
-    log_path = Path(project_config.CONFIG.get("log_path")) if project_config else (Path.cwd() / "logs" / "downloads.log")
-    log_path = Path(log_path)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    # Setup enhanced logging
+    logger = setup_logging(log_path, verbosity)
+    logger.info("SimpleDL CLI started")
+    logger.debug(f"Config: {config_path}")
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s: %(message)s",
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-            logging.FileHandler(log_path, encoding="utf-8"),
-        ],
-    )
-
-    print("SimpleDL CLI — loop mode. Ctrl+C cancels current download.")
-    print("Commands: ':q' or 'quit' to exit, ':folder' to choose folder, ':logs' to show log file, ':format' to set format/quality, ':config' to open config, ':ejs' to toggle EJS solver")
+    print("SimpleDL CLI - loop mode. Ctrl+C cancels current download.")
+    print("Commands: ':q' or 'quit' to exit, ':folder' to choose folder, ':logs' to show log file,")
+    print("          ':format' to set format/quality, ':config' to open config, ':ejs' to toggle EJS solver")
     print(f"Current output folder: {out_dir}")
     print(f"Current format: {current_format}, quality: {current_quality}")
+    print()
 
     def open_in_editor(path: Path):
         try:
@@ -76,8 +76,9 @@ def run_cli():
             else:
                 import subprocess
                 subprocess.run(["xdg-open", str(path)])
-        except Exception:
-            print(f"Abra o arquivo manualmente: {path}")
+        except Exception as e:
+            logger.warning(f"Could not open editor: {e}")
+            print(f"Please open manually: {path}")
 
     def _show_metadata(metadata: dict):
         print("\n=== METADADOS ===")
@@ -109,143 +110,224 @@ def run_cli():
                     metadata[key] = new
         return metadata
 
+    def _parse_playlist_range(input_str: str, total: int) -> tuple:
+        """Parse playlist range input.
+        
+        Accepts: single number (5), range (1-10), or comma-separated (1,3,5)
+        Returns: (start_idx, end_idx) for slicing, or None if invalid
+        """
+        input_str = input_str.strip()
+        try:
+            if ',' in input_str:
+                # List of numbers: not implemented yet, but parse first for now
+                indices = [int(x.strip()) for x in input_str.split(',')]
+                return min(indices) - 1, max(indices)
+            elif '-' in input_str:
+                # Range
+                parts = input_str.split('-')
+                a = int(parts[0].strip())
+                b = int(parts[1].strip())
+                return max(1, a) - 1, min(total, b)
+            else:
+                # Single number
+                n = int(input_str)
+                return n - 1, n
+        except Exception:
+            return None
+
     try:
         while True:
             try:
                 txt = input("URL or command: ").strip()
             except EOFError:
-                print("EOF — exiting")
+                print("EOF - exiting")
+                logger.info("CLI exited via EOF")
                 break
 
             if not txt:
                 continue
             if txt.lower() in (":q", "q", "quit", "exit"):
-                print("Saindo...")
+                print("Goodbye!")
+                logger.info("CLI exited via :q command")
                 break
             if txt.lower() in (":folder", "folder"):
-                p = input(f"Digite o caminho da pasta (atual: {out_dir}): ").strip()
+                p = input(f"Enter folder path (current: {out_dir}): ").strip()
                 if not p:
-                    print("Nada alterado")
+                    print("No change.")
                     continue
                 newp = Path(p).expanduser()
                 try:
                     newp.mkdir(parents=True, exist_ok=True)
                     out_dir = newp
-                    print(f"Pasta de saída alterada para: {out_dir}")
+                    # Save to config
+                    if project_config:
+                        project_config.CONFIG["default_out_dir"] = str(out_dir)
+                        try:
+                            project_config.save_config()
+                            logger.info(f"Output folder changed and saved: {out_dir}")
+                        except Exception as e:
+                            logger.warning(f"Could not save config: {e}")
+                    print(f"Output folder changed to: {out_dir}")
                 except Exception as e:
-                    print(f"Falha ao criar pasta: {e}")
+                    logger.error(f"Failed to create folder: {e}")
+                    print(f"Error: {e}")
                 continue
             if txt.lower() in (":logs", "logs"):
-                print(f"Log em: {log_path}")
+                print(f"Log file: {log_path}")
                 continue
             if txt.lower() in (":format", "format"):
-                fmt = input("Formato desejado (mp4/mp3/m4a/mkv) [current: %s]: " % current_format).strip().lower()
+                fmt = input(f"Format (mp4/mp3/m4a/mkv) [current: {current_format}]: ").strip().lower()
                 if fmt:
                     if fmt not in ("mp4", "mp3", "m4a", "mkv"):
-                        print("Formato inválido — mantendo atual")
+                        print("Invalid format - keeping current")
                     else:
                         current_format = fmt
-                qual = input("Qualidade (best/720p/480p/360p/audio-only) [current: %s]: " % current_quality).strip().lower()
+                qual = input(f"Quality (best/720p/480p/360p/audio-only) [current: {current_quality}]: ").strip().lower()
                 if qual:
                     if qual not in ("best", "720p", "480p", "360p", "audio-only"):
-                        print("Qualidade inválida — mantendo atual")
+                        print("Invalid quality - keeping current")
                     else:
                         current_quality = qual
-                print(f"Formato atualizado: {current_format}, qualidade: {current_quality}")
+                print(f"Updated: format={current_format}, quality={current_quality}")
+                logger.info(f"Format/quality changed: {current_format}/{current_quality}")
                 continue
             if txt.lower() in (":config", "config"):
-                print(f"Caminho do arquivo de configuração: {config_path}")
-                if not config_path.exists():
-                    print("Nenhum config.yml encontrado — você pode criar a partir de config.example.yml")
-                    create = input("Criar config.yml a partir do exemplo? (y/N): ").strip().lower()
+                print(f"Config file: {config_path}")
+                if not Path(config_path).exists():
+                    print("No config.yml found - you can create from config.example.yml")
+                    create = input("Create config.yml from example? (y/N): ").strip().lower()
                     if create == "y":
                         ex = Path.cwd() / "config.example.yml"
                         if ex.exists():
                             try:
                                 import shutil
                                 shutil.copy(ex, config_path)
-                                print(f"config.yml criado em {config_path}")
+                                logger.info(f"Config created from example")
+                                print(f"config.yml created at {config_path}")
                             except Exception as e:
-                                print(f"Falha ao criar config.yml: {e}")
+                                logger.error(f"Failed to create config: {e}")
+                                print(f"Error: {e}")
                         else:
-                            print("config.example.yml não encontrado")
+                            print("config.example.yml not found")
                 else:
-                    edit = input("Abrir config.yml no editor padrão? (y/N): ").strip().lower()
+                    edit = input("Open config.yml in editor? (y/N): ").strip().lower()
                     if edit == "y":
-                        open_in_editor(config_path)
+                        open_in_editor(Path(config_path))
                 continue
             if txt.lower() in (":ejs", "ejs"):
-                # toggle remote_components in config
                 if not project_config:
-                    print("Módulo de config não disponível — crie config.yml manualmente")
+                    print("Config module not available - edit config.yml manually")
                     continue
                 cur = project_config.CONFIG.get("remote_components")
                 if cur:
-                    print(f"EJS atualmente ativado: {cur}")
-                    off = input("Desativar EJS? (y/N): ").strip().lower()
+                    print(f"EJS currently enabled: {cur}")
+                    off = input("Disable EJS? (y/N): ").strip().lower()
                     if off == "y":
                         project_config.CONFIG["remote_components"] = None
                         try:
                             project_config.save_config()
-                            print("EJS desativado e salvo em config.yml")
+                            logger.info("EJS disabled via CLI")
+                            print("EJS disabled and saved")
                         except Exception as e:
-                            print(f"Falha ao salvar config: {e}")
+                            logger.error(f"Failed to save config: {e}")
+                            print(f"Error: {e}")
                 else:
-                    on = input("Ativar EJS (remote_components) com 'ejs:github'? (Y/n): ").strip().lower()
+                    on = input("Enable EJS (ejs:github)? (Y/n): ").strip().lower()
                     if on == "" or on == "y":
                         project_config.CONFIG["remote_components"] = "ejs:github"
                         try:
                             project_config.save_config()
-                            print("EJS ativado e salvo em config.yml")
+                            logger.info("EJS enabled via CLI")
+                            print("EJS enabled and saved")
                         except Exception as e:
-                            print(f"Falha ao salvar config: {e}")
+                            logger.error(f"Failed to save config: {e}")
+                            print(f"Error: {e}")
                 continue
 
             url = txt
+            start_time = time.time()
+            download_type = "unknown"
+            
             try:
-                # Analyze metadata first and interact
+                # Analyze metadata first
                 meta = None
                 try:
                     meta = analisar_video(url)
                 except Exception as e:
-                    print(f"Falha ao analisar metadados: {e}")
+                    user_msg = "Could not analyze metadata. Continue anyway? (y/N): "
+                    if input(user_msg).strip().lower() != "y":
+                        logger.warning(f"Metadata analysis failed: {e}")
+                        continue
+                    logger.debug(f"Metadata analysis failed: {e}")
 
                 if meta and meta.get("is_playlist"):
+                    download_type = "playlist"
                     title = meta.get("title", "(playlist)")
                     entries = meta.get("entries", [])
-                    print(f"Playlist: {title} — {len(entries)} itens")
-                    choice = input("Baixar todos? (y) / intervalo (e) / cancelar (n): ").strip().lower()
+                    num_items = len(entries)
+                    print(f"\nPlaylist: {title} - {num_items} items")
+                    choice = input("Download all (y) / range (r) / cancel (n): ").strip().lower()
+                    
                     if choice == "n":
+                        logger.info("Playlist download cancelled by user")
                         continue
-                    if choice == "e":
-                        rng = input("Intervalo (ex: 1-10): ").strip()
-                        try:
-                            a, b = rng.split("-")
-                            a_i = max(1, int(a))
-                            b_i = min(len(entries), int(b))
-                        except Exception:
-                            print("Intervalo inválido — abortando")
+                    
+                    sel_indices = None
+                    if choice == "r":
+                        rng = input(f"Range (1-{num_items}): ").strip()
+                        parsed = _parse_playlist_range(rng, num_items)
+                        if not parsed:
+                            print("Invalid range - cancelled")
+                            logger.warning(f"Invalid playlist range: {rng}")
                             continue
-                        sel = entries[a_i - 1:b_i]
+                        a_i, b_i = parsed
+                        sel_indices = range(a_i, b_i)
                     else:
-                        sel = entries
-                    for i, entry in enumerate(sel, start=1):
-                        print(f"[{i}/{len(sel)}] {entry.get('title')}")
-                        # recursive call: analyze and download each
-                        # small sleep could be added to avoid hammering
-                        download_video(entry.get('webpage_url'), out_dir, fmt=current_format, quality=current_quality)
+                        sel_indices = range(num_items)
+                    
+                    sel = [entries[i] for i in sel_indices if i < num_items]
+                    
+                    # Download playlist items
+                    success_count = 0
+                    fail_count = 0
+                    for i, entry in enumerate(sel, 1):
+                        item_url = entry.get('webpage_url')
+                        item_title = entry.get('title', f'Item {i}')
+                        print(f"\n[{i}/{len(sel)}] {item_title}")
+                        logger.info(f"Downloading playlist item {i}/{len(sel)}: {item_title}")
+                        
+                        try:
+                            item_start = time.time()
+                            log_download_context(logger, item_url, "playlist_item", current_format, current_quality, str(out_dir))
+                            download_video(item_url, out_dir, fmt=current_format, quality=current_quality)
+                            duration = time.time() - item_start
+                            log_download_result(logger, True, duration, filename=item_title)
+                            success_count += 1
+                        except Exception as e:
+                            fail_count += 1
+                            duration = time.time() - item_start
+                            user_msg = handle_yt_dlp_error(e)
+                            print(f"  Error: {user_msg}")
+                            logger.error(f"Playlist item failed: {e}")
+                            log_download_result(logger, False, duration, error=str(e))
+                            # Continue with next item
+                    
+                    logger.info(f"Playlist complete: {success_count} succeeded, {fail_count} failed")
+                    print(f"\nPlaylist complete: {success_count} succeeded, {fail_count} failed out of {len(sel)}")
                     continue
 
-                # single video
+                # Single video
+                download_type = "video"
                 if meta:
                     _show_metadata(meta)
-                    resp = input("Confirmar download? [Enter=sim / e=editar / n=cancelar]: ").strip().lower()
+                    resp = input("Confirm download? [Enter=yes / e=edit / n=cancel]: ").strip().lower()
                     if resp == "n":
-                        print("Cancelado pelo usuário.")
+                        print("Cancelled by user.")
+                        logger.info("Download cancelled by user (metadata confirmation)")
                         continue
                     if resp == "e":
                         meta = _edit_metadata_interactive(meta)
-                    # build filename template
+                    # Build filename template
                     artist = meta.get('artist') or ""
                     title_meta = meta.get('title') or ""
                     def _safe(s: str) -> str:
@@ -253,20 +335,31 @@ def run_cli():
                     safe_artist = _safe(artist)[:120]
                     safe_title = _safe(title_meta)[:120]
                     filename_template = f"{safe_artist} - {safe_title}" if safe_artist else safe_title
-                    # pass filename template to downloader
+                    log_download_context(logger, url, download_type, current_format, current_quality, str(out_dir))
                     download_video(url, out_dir, fmt=current_format, quality=current_quality, filename_template=filename_template)
                 else:
-                    # if no metadata, proceed with default download
+                    log_download_context(logger, url, download_type, current_format, current_quality, str(out_dir))
                     download_video(url, out_dir, fmt=current_format, quality=current_quality)
+                
+                duration = time.time() - start_time
+                log_download_result(logger, True, duration)
 
             except KeyboardInterrupt:
-                # download_video captures cancellation, but also protect here
-                print("Download cancelado pelo usuário")
+                duration = time.time() - start_time
+                print("\nDownload cancelled by user.")
+                logger.warning(f"Download cancelled by user (Ctrl+C) after {duration:.2f}s")
+                log_download_result(logger, False, duration, error="User cancelled (Ctrl+C)")
             except Exception as e:
-                logging.exception("Erro durante o download")
-                print(f"Erro: {e}")
+                duration = time.time() - start_time
+                user_msg = handle_yt_dlp_error(e) if "yt_dlp" in str(type(e)) else str(e)
+                print(f"\nError: {user_msg}")
+                logger.error(f"Download failed: {e}")
+                logger.debug(f"Exception details: {type(e).__name__}")
+                log_download_result(logger, False, duration, error=str(e))
+                
     except KeyboardInterrupt:
-        print("Recebido Ctrl+C — saindo")
+        print("\nExiting...")
+        logger.info("CLI exited via Ctrl+C")
 
 
 if __name__ == '__main__':

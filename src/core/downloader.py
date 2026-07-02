@@ -1,4 +1,4 @@
-"""Downloader with progress, cancellation, format/quality selection, and logging.
+"""Downloader with progress, cancellation, format/quality selection, and enhanced logging.
 
 Uses yt_dlp and a progress hook to update a console progress bar.
 """
@@ -9,22 +9,31 @@ import os
 import threading
 from pathlib import Path
 from typing import Optional
+from datetime import datetime
 
 try:
     from yt_dlp import YoutubeDL
-except Exception:  # pragma: no cover - runtime dependency
+    from yt_dlp.utils import DownloadError as YtDlpDownloadError
+except Exception:
     YoutubeDL = None
+    YtDlpDownloadError = Exception
 
 
-# simple progress bar implementation to avoid requiring extra deps
+logger = logging.getLogger("simpledl.downloader")
+
+
 class ConsoleProgress:
     def __init__(self, width: int = 40):
         self.width = width
         self.lock = threading.Lock()
         self.last_len = 0
+        self.start_time = None
 
     def update(self, downloaded: int, total: Optional[int]):
         with self.lock:
+            if self.start_time is None:
+                self.start_time = datetime.now()
+            
             if total and total > 0:
                 frac = downloaded / total
                 pct = int(frac * 100)
@@ -38,6 +47,9 @@ class ConsoleProgress:
 
     def done(self):
         print()
+        if self.start_time:
+            duration = (datetime.now() - self.start_time).total_seconds()
+            logger.debug(f"Progress tracking duration: {duration:.2f}s")
 
 
 class DownloadCancelled(Exception):
@@ -58,36 +70,27 @@ def _build_ydl_opts(out_dir: Path, fmt: str, quality: str, filename_template: Op
 
     opts: dict = {
         "outtmpl": outtmpl,
-        # avoid console clutter from our side; yt-dlp verbosity will be allowed
         "noprogress": True,
     }
 
     # format selection
     if fmt in ("mp3", "m4a"):
-        # For audio extraction prefer best audio
         opts["format"] = "bestaudio/best"
-        # postprocessors to extract audio
         pp = [{
             "key": "FFmpegExtractAudio",
             "preferredcodec": "mp3" if fmt == "mp3" else "m4a",
             "preferredquality": "192",
         }]
-        # embed thumbnail and metadata when possible
         pp.append({"key": "EmbedThumbnail"})
         pp.append({"key": "FFmpegMetadata"})
         opts["postprocessors"] = pp
-        # keepvideo False so final file is audio
         opts["keepvideo"] = False
     else:
-        # video formats
-        # try to map quality to a simple yt-dlp format string
         if quality == "best":
             opts["format"] = "best"
         elif quality.endswith("p"):
-            # e.g. 720p -> bestvideo[height<=720]+bestaudio/best
             try:
                 h = int(quality[:-1])
-                # some servers expect exact format; keep conservative expression
                 opts["format"] = f"bestvideo[height<=?{h}]+bestaudio/best"
             except Exception:
                 opts["format"] = "best"
@@ -96,7 +99,6 @@ def _build_ydl_opts(out_dir: Path, fmt: str, quality: str, filename_template: Op
         else:
             opts["format"] = "best"
 
-    # try to write thumbnail separately always (helps embedding)
     opts.setdefault("writethumbnail", True)
     opts.setdefault("embedthumbnail", True)
     opts.setdefault("addmetadata", True)
@@ -105,10 +107,7 @@ def _build_ydl_opts(out_dir: Path, fmt: str, quality: str, filename_template: Op
 
 
 def _load_project_config():
-    """Load project config module if available.
-
-    Tries multiple import paths to be robust when running from src/ or from repo root.
-    """
+    """Load project config module if available."""
     try:
         import config as project_config
         return project_config
@@ -133,10 +132,7 @@ def download_video(url: str, out_dir: str | Path, fmt: str = "mp4", quality: str
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    logger = logging.getLogger("simpledl.downloader")
-
     cancel_event = threading.Event()
-
     progress = ConsoleProgress()
 
     def progress_hook(d):
@@ -146,10 +142,8 @@ def download_video(url: str, out_dir: str | Path, fmt: str = "mp4", quality: str
                 downloaded = d.get("downloaded_bytes") or 0
                 total = d.get("total_bytes") or d.get("total_bytes_estimate")
                 progress.update(downloaded, total)
-                # check cancellation
                 if cancel_event.is_set():
-                    logger.info("Cancellation requested — aborting download")
-                    # raising KeyboardInterrupt will stop the download
+                    logger.info("Cancellation requested - aborting download")
                     raise KeyboardInterrupt()
             elif status == "finished":
                 progress.done()
@@ -157,34 +151,35 @@ def download_video(url: str, out_dir: str | Path, fmt: str = "mp4", quality: str
         except KeyboardInterrupt:
             raise
         except Exception:
-            logger.exception("Erro no hook de progresso")
+            logger.exception("Error in progress hook")
 
     ydl_opts = _build_ydl_opts(Path(out_dir), fmt, quality, filename_template)
-
-    # route yt-dlp logs through our logger and allow its warnings to be shown
     ydl_opts["logger"] = logger
-    # optionally enable remote_components if configured
+    ydl_opts["progress_hooks"] = [progress_hook]
+
     project_config = _load_project_config()
     if project_config:
         rc = project_config.CONFIG.get("remote_components")
         if rc:
             ydl_opts["remote_components"] = rc
-    ydl_opts["progress_hooks"] = [progress_hook]
+            logger.debug(f"Using remote_components: {rc}")
 
     try:
         with YoutubeDL(ydl_opts) as ydl:
+            logger.debug(f"Starting download with options: format={fmt}, quality={quality}")
             try:
                 ydl.download([url])
             except KeyboardInterrupt:
-                # user cancelled
                 cancel_event.set()
-                logger.warning("Download cancelado pelo usuário")
+                logger.warning("Download cancelled by user")
                 raise
-            except Exception:
-                logger.exception("Erro durante o download")
+            except YtDlpDownloadError as e:
+                logger.error(f"yt-dlp download error: {e}")
+                raise
+            except Exception as e:
+                logger.exception("Unexpected error during download")
                 raise
     except KeyboardInterrupt:
-        # re-raise to let caller inform the user
         raise
     except Exception:
         raise
