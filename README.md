@@ -3,6 +3,7 @@
 Um downloader em Python baseado em yt-dlp, com foco em automação, organização e flexibilidade.
 
 ⚠️ This project is under active development. Expect breaking changes and incomplete features.                              
+
 ⚠️ Esse projeto está em desenvolvimento ativo. Espere coisas quebrando e features incompletas.
 
 ## 📌 Sobre o projeto
