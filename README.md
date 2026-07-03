@@ -28,17 +28,31 @@ O objetivo é simplificar o uso do yt-dlp com uma camada extra de conveniência 
 ```
 SimpleDL/
 │
-├── main.py            -> Entrada principal
-├── cli.py             -> Interface de linha de comando
-├── core/
-│   ├── downloader.py  -> Sistema de download (yt-dlp wrapper)
-│   ├── url.py         -> Normalização e tratamento de URLs
-│   ├── metadata.py    -> Extração de metadados
+├── src/
+│   ├── main.py                    -> Entrada principal
+│   ├── cli.py                     -> Interface de linha de comando
+│   │
+│   └── core/
+│       ├── downloader.py          -> Sistema de download (yt-dlp wrapper)
+│       ├── url.py                 -> Normalização e tratamento de URLs
+│       ├── metadata.py           -> Extração de metadados
+│       └── config.py              -> Gerenciamento de configuração
 │
-├── config.py          -> Gerenciamento de configuração
-├── bootstrap.bat      -> Instalador automático
-├── requirements.txt   -> Dependências Python
-└── docs/              -> Documentação
+├── scripts/
+│   ├── bootstrap.bat             -> Instalador automático (Windows)
+│   └── bootstrap.sh              -> Instalador automático (Linux/macOS)
+│
+├── docs/
+│   ├── especificacao.md          -> Dependências do projeto
+│   ├── known-bugs-and-solutions.md -> Q&A de bugs comuns conhecidos
+│   └── video-demonstration/
+│       └── demo.mp4              -> Como usar o projeto
+│
+├── config.yml                   -> Configuração do usuário
+├── config.example.yml          -> Exemplo de configuração do usuário
+├── requirements.txt            -> Dependências Python
+├── LICENSE                     -> Licença
+└── README.md                   -> Documentação principal
 ```
 ## ⚙️ Instalação
 
