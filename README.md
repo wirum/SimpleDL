@@ -1,87 +1,102 @@
-<h1 align="center">SimpleDL</h1>
+# SimpleDL
 
-<p align="center">
-Um downloader simples e eficiente desenvolvido em Python.
-</p>
+Um downloader em Python baseado em yt-dlp, com foco em automação, organização e flexibilidade.
 
 ## 📌 Sobre o projeto
 
-O **SimpleDL** é uma ferramenta de download desenvolvida para facilitar o gerenciamento de downloads através de uma interface simples e prática.
+O SimpleDL é uma ferramenta de linha de comando para download de vídeos e áudios, com suporte a playlists, normalização de URLs e automações de instalação.
 
-O projeto tem como objetivo unir facilidade de uso, organização de código e possibilidade de expansão com novos recursos.
+O objetivo é simplificar o uso do yt-dlp com uma camada extra de conveniência e configuração automatizada.
 
 ## 🚀 Funcionalidades
 
-- ✅ Download de vídeos e áudios
-- ✅ Conversão de formatos
-- ✅ Interface gráfica
-- ✅ Organização automática dos arquivos
-- ✅ Estrutura modular para melhorias futuras
+- Download de vídeos e áudios via yt-dlp
+- Suporte a playlists (com escolha entre vídeo único ou playlist completa)
+- Normalização de URLs (YouTube, YouTube Music, youtu.be)
+- Sistema de bootstrap com instalação automática de dependências
+- Integração com FFmpeg para processamento de mídia
+- Sistema de configuração via YAML
 
 ## 🛠️ Tecnologias utilizadas
 
 - Python
 - yt-dlp
-- FFmpeg
-- Bibliotecas de interface gráfica
+- FFmpeg (ou FFmpeg for yt-dlp)
+- PyYAML
 
 ## 📂 Estrutura do projeto
 ```
 SimpleDL/
 │
-├── main.py            -> Interface principal
-├── downloader.py      -> Sistema de download
-├── converter.py       -> Conversor de mídia
-├── requirements.txt   -> Dependências
-└── README.md          -> Documentação
+├── src/
+│   ├── main.py                    -> Entrada principal
+│   ├── cli.py                     -> Interface de linha de comando
+│   │
+│   └── core/
+│       ├── downloader.py          -> Sistema de download (yt-dlp wrapper)
+│       ├── url.py                 -> Normalização e tratamento de URLs
+│       ├── metadata.py           -> Extração de metadados
+│       └── config.py              -> Gerenciamento de configuração
+│
+├── scripts/
+│   ├── bootstrap.bat             -> Instalador automático (Windows)
+│   └── bootstrap.sh              -> Instalador automático (Linux/macOS)
+│
+├── docs/
+│   ├── especificacao.md          -> Dependências do projeto
+│   ├── known-bugs-and-solutions.md -> Q&A de bugs comuns conhecidos
+│   └── video-demonstration/
+│       └── demo.mp4              -> Como usar o projeto
+│
+├── config.yml                   -> Configuração do usuário
+├── config.example.yml          -> Exemplo de configuração do usuário
+├── requirements.txt            -> Dependências Python
+├── LICENSE                     -> Licença
+└── README.md                   -> Documentação principal
 ```
 ## ⚙️ Instalação
 
 Clone o repositório:
+
+```bash
+git clone https://github.com/wirum/SimpleDL.git
 ```
-git clone https://github.com/seu-usuario/SimpleDL.git
-```
+
 Acesse a pasta:
-```
+
+```bash
 cd SimpleDL
 ```
-Instale as dependências:
+
+Execute o bootstrap:
+
+```bash
+bootstrap.bat
 ```
-pip install -r requirements.txt
-```
-Execute o programa:
-```
-python main.py
-```
+
 ## 📦 Dependências
 
-O SimpleDL utiliza:
-
-- `yt-dlp` para gerenciamento dos downloads
-- `FFmpeg` para processamento e conversão dos arquivos
+- yt-dlp
+- FFmpeg (ou pacote equivalente para Windows)
+- Python 3.10+
 
 ## 🧠 Objetivo
 
-O SimpleDL foi criado como um projeto de aprendizado e desenvolvimento, explorando:
+O SimpleDL foi criado como um projeto de aprendizado e experimentação em:
 
-- Desenvolvimento de aplicações em Python
-- Criação de interfaces gráficas
-- Automação de tarefas
-- Integração com ferramentas externas
-- Organização de projetos
+- automação de downloads
+- integração com ferramentas externas
+- processamento de mídia
+- design de CLIs mais inteligentes
 
 ## 📈 Futuras melhorias
 
-- [ ] Barra de progresso dos downloads
-- [ ] Histórico de arquivos baixados
-- [ ] Configurações personalizadas
-- [ ] Melhor tratamento de erros
-- [ ] Suporte para mais formatos
+- interface gráfica
+- histórico de downloads
+- melhor sistema de filas
+- suporte a múltiplas plataformas além do YouTube
+- sistema de plugins
 
 ## 👨‍💻 Autor
 
-Desenvolvido por Eu.. e um pouco de IA também ksks
-
----
-
-⭐ Se gostou do projeto, considere deixar uma estrela no repositório.
+Desenvolvido por um estudante tentando não enlouquecer com URLs e dependências externas e um pouco de IA kkk
