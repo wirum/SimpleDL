@@ -1,65 +1,70 @@
 @echo off
-REM SimpleDL bootstrap (Windows)
-SETLOCAL ENABLEDELAYEDEXPANSION
+setlocal enabledelayedexpansion
 
-echo SimpleDL bootstrap (Windows)
+echo ================================
+echo SimpleDL Bootstrap (Windows)
+echo ================================
 
+:: Detect Python
 where python >nul 2>&1
-if errorlevel 1 (
-  echo Error: Python not found on PATH. Install Python 3 and re-run this script.
-  pause
-  exit /b 1
+if %errorlevel% neq 0 (
+    where winget >nul 2>&1
+    if %errorlevel% equ 0 (
+        echo Python not found. Installing via winget...
+        winget install Python.Python.3
+    ) else (
+        echo Python not found and winget not available.
+        echo Please install manually:
+        echo https://www.python.org/downloads/
+        pause
+        exit /b 1
+    )
+)
+echo [STEP 1] Python OK
+
+:: Go to project root (folder of this script)
+cd /d %~dp0..
+
+:: Create venv
+if not exist .venv (
+    echo [STEP 2] Creating virtual environment...
+    %PYTHON% -m venv .venv
 )
 
-set USE_VENV=
-echo.
-set /p USE_VENV="Create and use a virtualenv? [Y/n]: "
-if "%USE_VENV%"==" " set USE_VENV=Y
-if /I "%USE_VENV%"=="" set USE_VENV=Y
+echo [STEP 3] Activating venv...
+call .venv\Scripts\activate
 
-if /I "%USE_VENV%"=="N" goto globalinst
-if /I "%USE_VENV%"=="n" goto globalinst
+:: Upgrade pip
+echo [STEP 4] Upgrading pip...
+python -m pip install --upgrade pip
 
-REM Use venv
-echo.
-echo Creating virtualenv .venv...
-python -m venv .venv
 if errorlevel 1 (
-  echo Error creating virtualenv
-  pause
-  exit /b 1
+    echo [ERROR] pip upgrade failed
+    exit /b 1
 )
 
-echo Activating virtualenv and installing requirements...
-call .venv\Scripts\activate.bat
-if errorlevel 1 (
-  echo Error activating virtualenv
-  pause
-  exit /b 1
-)
-
-python -m pip install -U pip
-pip install -r requirements.txt
-goto checks
-
-:globalinst
-echo.
-echo Installing requirements globally (you may need admin privileges)...
-python -m pip install -U pip
+:: Install requirements
+echo [STEP 5] Installing dependencies...
 pip install -r requirements.txt
 
-:checks
-echo.
-echo Basic checks:
+if errorlevel 1 (
+    echo [ERROR] Failed installing requirements
+    exit /b 1
+)
+
+:: Check ffmpeg
 where ffmpeg >nul 2>&1
-if errorlevel 1 (
-  echo Warning: ffmpeg not found. Post-processing (audio extraction/embedding) may fail.
-) else (
-  echo ffmpeg: OK
+if %errorlevel% neq 0 (
+    echo [WARNING] FFmpeg not found in PATH
+)
+
+:: Check yt-dlp
+python -c "import yt_dlp" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [WARNING] yt-dlp not installed correctly
 )
 
 echo.
-echo See config.example.yml to create config.yml with custom options.
-echo Bootstrap complete!
+echo Bootstrap complete.
+echo Run: python src/main.py
 pause
-ENDLOCAL
