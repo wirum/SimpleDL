@@ -1,0 +1,23 @@
+# SimpleDL configuration
+# Copy this file to config.yml and adjust as needed.
+# (The CLI's ":config" command can also do this for you.)
+
+# Folder where downloads are saved by default
+default_out_dir: ./downloads
+
+# Default format: mp4, mkv, webm (video) or mp3, m4a, flac, opus, wav (audio)
+default_format: mp4
+
+# Default quality: best, 720p, 480p, 360p (video) or a bitrate like 192k (audio)
+default_quality: best
+
+# Where the log file is written
+log_path: ./logs/downloads.log
+
+# Log verbosity: info or debug
+verbosity: info
+
+# EJS remote components solver (helps resolve YouTube signature/JS challenges).
+# Set to "ejs:github" to enable, or leave as null to disable.
+# The CLI's ":ejs" command can toggle this for you.
+remote_components: null

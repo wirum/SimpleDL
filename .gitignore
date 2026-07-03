@@ -35,6 +35,5 @@ dist/
 Thumbs.db
 desktop.ini
 *iniciar.bat
-src/core/racionais.mp4
-src/core/racionais.webm
-*.mp4
+*.webp
+*.webm
