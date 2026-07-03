@@ -98,7 +98,7 @@ O SimpleDL foi criado como um projeto de aprendizado e experimentação em:
 - interface gráfica
 - histórico de downloads
 - melhor sistema de filas
-- suporte a múltiplas plataformas além do YouTube (A SER PROJETADO)
+- suporte a múltiplas plataformas além do YouTube
 - sistema de plugins
 
 ## 👨‍💻 Autor
