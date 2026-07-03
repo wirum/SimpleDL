@@ -2,6 +2,9 @@
 
 Um downloader em Python baseado em yt-dlp, com foco em automação, organização e flexibilidade.
 
+⚠️ This project is under active development. Expect breaking changes and incomplete features.
+⚠️ Esse projeto está em desenvolvimento ativo. Espere coisas quebrando e features incompletas.
+
 ## 📌 Sobre o projeto
 
 O SimpleDL é uma ferramenta de linha de comando para download de vídeos e áudios, com suporte a playlists, normalização de URLs e automações de instalação.
