@@ -25,7 +25,7 @@ O objetivo é simplificar o uso do yt-dlp com uma camada extra de conveniência 
 - PyYAML
 
 ## 📂 Estrutura do projeto
-
+```
 SimpleDL/
 │
 ├── main.py            -> Entrada principal
@@ -39,7 +39,7 @@ SimpleDL/
 ├── bootstrap.bat      -> Instalador automático
 ├── requirements.txt   -> Dependências Python
 └── docs/              -> Documentação
-
+```
 ## ⚙️ Instalação
 
 Clone o repositório:
