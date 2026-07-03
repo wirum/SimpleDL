@@ -1,10 +1,76 @@
 from core.downloader import download_video
 from core.metadata import analisar_video
 from logger import setup_logging, log_download_context, log_download_result
-from errors import user_friendly_error, DownloadError, handle_yt_dlp_error
+from errors import handle_yt_dlp_error
 import time
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 
+def normalize_domain(url: str) -> str:
+    """Converte qualquer domínio do YouTube para youtube.com.
+    Mantém todos os parâmetros originais.
+    """
+    parsed = urlparse(url)
+    netloc = parsed.netloc.lower()
+
+    # Caso especial: youtu.be
+    if netloc == 'youtu.be':
+        path = parsed.path.lstrip('/')
+        if path:
+            query = parsed.query
+            new_query = f"v={path}" + (f"&{query}" if query else "")
+            return urlunparse(('https', 'youtube.com', '/watch', '', new_query, ''))
+        return url
+
+    # Qualquer subdomínio de youtube.com -> youtube.com
+    if netloc.endswith('.youtube.com'):
+        return urlunparse(parsed._replace(netloc='youtube.com'))
+
+    # Se não for um domínio conhecido, retorna a URL original
+    return url
+
+def strip_playlist_parameters(url: str) -> str:
+    """Remove parâmetros relacionados a playlist (list, index, start_radio)."""
+    parsed = urlparse(url)
+    qs = parse_qs(parsed.query)
+    playlist_params = {'list', 'index', 'start_radio'}
+    new_qs = {k: v for k, v in qs.items() if k not in playlist_params}
+    new_query = urlencode(new_qs, doseq=True)
+    return urlunparse(parsed._replace(query=new_query))
+
+def ask_playlist_or_single(url: str, logger: logging.Logger) -> str:
+    """Se URL contém 'list', pergunta ao usuário se deseja apenas o vídeo ou a playlist.
+    Se 'list' existe mas 'v' não, não oferece a opção de vídeo único (pois não há vídeo).
+    """
+    parsed = urlparse(url)
+    qs = parse_qs(parsed.query)
+
+    if 'list' not in qs:
+        return url
+
+    # Se não houver 'v', a URL é apenas uma playlist, não um vídeo único
+    if 'v' not in qs:
+        logger.info("URL contains 'list' but no 'v' – treating as pure playlist")
+        print("URL detectada como apenas uma playlist (não há um vídeo único associado).")
+        return url
+
+    # Agora temos 'list' e 'v' -> oferecer as opções
+    print("\nFoi detectado que esta URL faz parte de uma playlist.")
+    print("O que deseja baixar?")
+    print("1. Apenas este vídeo")
+    print("2. A playlist inteira")
+    choice = input("Escolha: ").strip()
+
+    if choice == "1":
+        logger.info("User selected: single video")
+        new_url = strip_playlist_parameters(url)
+        print("URL ajustada para apenas o vídeo.")
+        return new_url
+    else:
+        logger.info("User selected: playlist")
+        print("Mantendo a playlist.")
+        return url
+    
 def run_cli():
     """Loop CLI for SimpleDL.
 
@@ -59,11 +125,27 @@ def run_cli():
     logger.info("SimpleDL CLI started")
     logger.debug(f"Config: {config_path}")
 
-    print("SimpleDL CLI - loop mode. Ctrl+C cancels current download.")
-    print("Commands: ':q' or 'quit' to exit, ':folder' to choose folder, ':logs' to show log file,")
-    print("          ':format' to set format/quality, ':config' to open config, ':ejs' to toggle EJS solver")
-    print(f"Current output folder: {out_dir}")
-    print(f"Current format: {current_format}, quality: {current_quality}")
+    banner_width = 60
+    sep = "=" * banner_width
+    print(sep)
+    print("SimpleDL CLI".center(banner_width))
+    print(sep)
+    print()
+    print("Comandos:")
+    print("  :q       sair")
+    print("  :folder  escolher pasta de saida")
+    print("  :logs    mostrar caminho do log")
+    print("  :format  definir formato/qualidade")
+    print("  :config  abrir/criar config.yml")
+    print("  :ejs     ativar/desativar EJS solver")
+    print()
+    print("-" * banner_width)
+    print(f"Pasta de saida : {out_dir}")
+    print(f"Formato atual  : {current_format}")
+    print(f"Qualidade atual: {current_quality}")
+    print("-" * banner_width)
+    print()
+    print("Ctrl+C cancela o download atual.")
     print()
 
     def open_in_editor(path: Path):
@@ -79,6 +161,45 @@ def run_cli():
         except Exception as e:
             logger.warning(f"Could not open editor: {e}")
             print(f"Please open manually: {path}")
+
+    def _log_metadata(logger, metadata: dict):
+        """Write key metadata fields to the log file for traceability."""
+        logger.info("--- Metadata ---")
+        logger.info(f"Title: {metadata.get('title','')}")
+        logger.info(f"Artist: {metadata.get('artist','')}")
+        if metadata.get('album'):
+            logger.info(f"Album: {metadata.get('album')}")
+        if metadata.get('track_number'):
+            logger.info(f"Track: {metadata.get('track_number')}")
+        if metadata.get('year'):
+            logger.info(f"Year: {metadata.get('year')}")
+        if metadata.get('duration'):
+            logger.info(f"Duration (metadata): {metadata.get('duration')}s")
+        logger.info("----------------")
+
+    def _strip_mix_radio(url: str) -> str:
+        """If the URL points to an auto-generated YouTube Mix/Radio
+        (list=RD...), strip the playlist params so only the single video
+        is downloaded. Real playlists (PL, UU, LL, etc.) are left as-is.
+
+        This prevents accidentally downloading YouTube's auto-generated
+        mixes, which can contain hundreds of tracks, when the person only
+        wanted the one video/song they clicked on.
+        """
+        try:
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(url.strip())
+            q = parse_qs(parsed.query)
+            list_id = (q.get("list") or [""])[0]
+            if list_id.startswith("RD"):
+                from core.url import limpar_url
+                try:
+                    return limpar_url(url)
+                except Exception:
+                    return url
+        except Exception:
+            pass
+        return url
 
     def _show_metadata(metadata: dict):
         print("\n=== METADADOS ===")
@@ -176,19 +297,69 @@ def run_cli():
                 print(f"Log file: {log_path}")
                 continue
             if txt.lower() in (":format", "format"):
-                fmt = input(f"Format (mp4/mp3/m4a/mkv) [current: {current_format}]: ").strip().lower()
-                if fmt:
-                    if fmt not in ("mp4", "mp3", "m4a", "mkv"):
-                        print("Invalid format - keeping current")
-                    else:
-                        current_format = fmt
-                qual = input(f"Quality (best/720p/480p/360p/audio-only) [current: {current_quality}]: ").strip().lower()
-                if qual:
-                    if qual not in ("best", "720p", "480p", "360p", "audio-only"):
-                        print("Invalid quality - keeping current")
-                    else:
-                        current_quality = qual
-                print(f"Updated: format={current_format}, quality={current_quality}")
+                print()
+                print("O que deseja baixar?")
+                print()
+                print("1. Video")
+                print("2. Audio")
+                kind = input("> ").strip()
+
+                if kind == "1":
+                    video_formats = ("mp4", "mkv", "webm")
+                    print()
+                    print("Formato de video:")
+                    print()
+                    print("1. MP4")
+                    print("2. MKV")
+                    print("3. WEBM")
+                    fmt_choice = input("> ").strip()
+                    fmt_map = {"1": "mp4", "2": "mkv", "3": "webm"}
+                    new_fmt = fmt_map.get(fmt_choice)
+                    if not new_fmt:
+                        print(f"Opcao invalida - mantendo formato atual ({current_format})")
+                        new_fmt = current_format if current_format in video_formats else "mp4"
+
+                    print()
+                    qual = input(f"Qualidade (best/720p/480p/360p) [atual: {current_quality}]: ").strip().lower()
+                    if qual:
+                        if qual not in ("best", "720p", "480p", "360p"):
+                            print("Qualidade invalida - mantendo atual")
+                        else:
+                            current_quality = qual
+                    current_format = new_fmt
+
+                elif kind == "2":
+                    audio_formats = ("mp3", "m4a", "flac", "opus", "wav")
+                    print()
+                    print("Formato de audio:")
+                    print()
+                    print("1. MP3")
+                    print("2. M4A")
+                    print("3. FLAC")
+                    print("4. OPUS")
+                    print("5. WAV")
+                    fmt_choice = input("> ").strip()
+                    fmt_map = {"1": "mp3", "2": "m4a", "3": "flac", "4": "opus", "5": "wav"}
+                    new_fmt = fmt_map.get(fmt_choice)
+                    if not new_fmt:
+                        print(f"Opcao invalida - mantendo formato atual ({current_format})")
+                        new_fmt = current_format if current_format in audio_formats else "mp3"
+
+                    print()
+                    default_bitrate = current_quality if current_quality not in ("best", "720p", "480p", "360p") else "192k"
+                    bitrate = input(f"Bitrate (ex: 128k/192k/256k/320k) [atual: {default_bitrate}]: ").strip().lower()
+                    if bitrate:
+                        current_quality = bitrate
+                    elif current_quality in ("best", "720p", "480p", "360p"):
+                        current_quality = "192k"
+                    current_format = new_fmt
+
+                else:
+                    print("Opcao invalida - nenhuma alteracao feita")
+                    continue
+
+                print()
+                print(f"Atualizado: format={current_format}, quality={current_quality}")
                 logger.info(f"Format/quality changed: {current_format}/{current_quality}")
                 continue
             if txt.lower() in (":config", "config"):
@@ -197,13 +368,28 @@ def run_cli():
                     print("No config.yml found - you can create from config.example.yml")
                     create = input("Create config.yml from example? (y/N): ").strip().lower()
                     if create == "y":
-                        ex = Path.cwd() / "config.example.yml"
+                        ex = Path(config_path).parent / "config.example.yml"
                         if ex.exists():
                             try:
                                 import shutil
                                 shutil.copy(ex, config_path)
                                 logger.info(f"Config created from example")
                                 print(f"config.yml created at {config_path}")
+                                # Reload the config module so commands like :ejs
+                                # see it immediately, without restarting the CLI
+                                try:
+                                    import importlib
+                                    if project_config:
+                                        importlib.reload(project_config)
+                                    else:
+                                        try:
+                                            import config as project_config
+                                        except Exception:
+                                            from src import config as project_config
+                                    print("Config loaded - :ejs and other config commands are now available")
+                                except Exception as e:
+                                    logger.warning(f"Config created but could not be reloaded automatically: {e}")
+                                    print("Config created, but you may need to restart the CLI for it to take effect")
                             except Exception as e:
                                 logger.error(f"Failed to create config: {e}")
                                 print(f"Error: {e}")
@@ -245,6 +431,8 @@ def run_cli():
                 continue
 
             url = txt
+            url = normalize_domain(txt)
+            url = ask_playlist_or_single(url, logger)
             start_time = time.time()
             download_type = "unknown"
             
@@ -274,12 +462,20 @@ def run_cli():
                     
                     sel_indices = None
                     if choice == "r":
-                        rng = input(f"Range (1-{num_items}): ").strip()
+                        print()
+                        print(f"Playlist com {num_items} videos.")
+                        print()
+                        rng = input(f"Intervalo (1-{num_items}): ").strip()
                         parsed = _parse_playlist_range(rng, num_items)
                         if not parsed:
-                            print("Invalid range - cancelled")
+                            print("Intervalo invalido - digite novamente (ex: 7, 1-10, 1,3,5)")
                             logger.warning(f"Invalid playlist range: {rng}")
-                            continue
+                            rng = input(f"Intervalo (1-{num_items}): ").strip()
+                            parsed = _parse_playlist_range(rng, num_items)
+                            if not parsed:
+                                print("Intervalo invalido - cancelado")
+                                logger.warning(f"Invalid playlist range (retry): {rng}")
+                                continue
                         a_i, b_i = parsed
                         sel_indices = range(a_i, b_i)
                     else:
@@ -306,20 +502,25 @@ def run_cli():
                         except Exception as e:
                             fail_count += 1
                             duration = time.time() - item_start
-                            user_msg = handle_yt_dlp_error(e)
-                            print(f"  Error: {user_msg}")
-                            logger.error(f"Playlist item failed: {e}")
+                            try:
+                                user_msg = handle_yt_dlp_error(e)
+                            except Exception:
+                                user_msg = "Falha inesperada neste item."
+                            print(f"  Erro: {user_msg}")
+                            logger.error(f"Playlist item failed: {e}", exc_info=True)
                             log_download_result(logger, False, duration, error=str(e))
-                            # Continue with next item
+                            # Item failure does not stop the playlist - continue with next item
                     
                     logger.info(f"Playlist complete: {success_count} succeeded, {fail_count} failed")
                     print(f"\nPlaylist complete: {success_count} succeeded, {fail_count} failed out of {len(sel)}")
                     continue
 
-                # Single video
-                download_type = "video"
+                # Single video (or audio, depending on current_format)
+                audio_formats = ("mp3", "m4a", "flac", "opus", "wav")
+                download_type = "audio" if current_format in audio_formats else "video"
                 if meta:
                     _show_metadata(meta)
+                    _log_metadata(logger, meta)
                     resp = input("Confirm download? [Enter=yes / e=edit / n=cancel]: ").strip().lower()
                     if resp == "n":
                         print("Cancelled by user.")
@@ -351,11 +552,15 @@ def run_cli():
                 log_download_result(logger, False, duration, error="User cancelled (Ctrl+C)")
             except Exception as e:
                 duration = time.time() - start_time
-                user_msg = handle_yt_dlp_error(e) if "yt_dlp" in str(type(e)) else str(e)
-                print(f"\nError: {user_msg}")
-                logger.error(f"Download failed: {e}")
-                logger.debug(f"Exception details: {type(e).__name__}")
+                try:
+                    user_msg = handle_yt_dlp_error(e)
+                except Exception:
+                    # Never let error formatting itself crash the CLI or leak a traceback
+                    user_msg = "Ocorreu um erro inesperado. Verifique o arquivo de log para detalhes."
+                print(f"\nErro: {user_msg}")
+                logger.error(f"Download failed: {e}", exc_info=True)
                 log_download_result(logger, False, duration, error=str(e))
+                # Safe mode: continue the CLI loop instead of propagating
                 
     except KeyboardInterrupt:
         print("\nExiting...")

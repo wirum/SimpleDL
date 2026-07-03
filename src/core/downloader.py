@@ -22,6 +22,50 @@ except Exception:
 logger = logging.getLogger("simpledl.downloader")
 
 
+class _DedupLoggerAdapter:
+    """Wraps a logger and suppresses immediately-repeated messages.
+
+    yt-dlp can emit the same warning dozens of times in a row (e.g. missing
+    JS runtime, one per format probed). This keeps the terminal/log readable
+    by collapsing consecutive duplicates into a single line plus a count,
+    without dropping genuinely different messages.
+    """
+    def __init__(self, wrapped: logging.Logger):
+        self._wrapped = wrapped
+        self._last_msg = None
+        self._repeat_count = 0
+
+    def _flush_repeat_notice(self):
+        if self._repeat_count > 0:
+            self._wrapped.debug(f"(previous message repeated {self._repeat_count} more time(s))")
+        self._repeat_count = 0
+
+    def _emit(self, level_func, msg):
+        if msg == self._last_msg:
+            self._repeat_count += 1
+            return
+        self._flush_repeat_notice()
+        self._last_msg = msg
+        level_func(msg)
+
+    def debug(self, msg):
+        # yt-dlp routes some warnings through debug() prefixed with '[warning]'
+        self._emit(self._wrapped.debug, msg)
+
+    def info(self, msg):
+        self._emit(self._wrapped.info, msg)
+
+    def warning(self, msg):
+        self._emit(self._wrapped.warning, msg)
+
+    def error(self, msg):
+        self._emit(self._wrapped.error, msg)
+
+
+def _make_dedup_logger(base_logger: logging.Logger) -> _DedupLoggerAdapter:
+    return _DedupLoggerAdapter(base_logger)
+
+
 class ConsoleProgress:
     def __init__(self, width: int = 40):
         self.width = width
@@ -74,12 +118,22 @@ def _build_ydl_opts(out_dir: Path, fmt: str, quality: str, filename_template: Op
     }
 
     # format selection
-    if fmt in ("mp3", "m4a"):
+    if fmt in ("mp3", "m4a", "flac", "opus", "wav"):
         opts["format"] = "bestaudio/best"
+
+        # quality here is a bitrate hint like "192k" (or legacy "audio-only"/"best").
+        # FFmpegExtractAudio expects a bare number (e.g. "192"); flac/wav are
+        # lossless and preferredquality doesn't apply to them.
+        preferred_quality = "192"
+        if isinstance(quality, str) and quality.endswith("k"):
+            digits = quality[:-1]
+            if digits.isdigit():
+                preferred_quality = digits
+
         pp = [{
             "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3" if fmt == "mp3" else "m4a",
-            "preferredquality": "192",
+            "preferredcodec": fmt,
+            "preferredquality": preferred_quality,
         }]
         pp.append({"key": "EmbedThumbnail"})
         pp.append({"key": "FFmpegMetadata"})
@@ -154,15 +208,23 @@ def download_video(url: str, out_dir: str | Path, fmt: str = "mp4", quality: str
             logger.exception("Error in progress hook")
 
     ydl_opts = _build_ydl_opts(Path(out_dir), fmt, quality, filename_template)
-    ydl_opts["logger"] = logger
+    ydl_opts["logger"] = _make_dedup_logger(logger)
     ydl_opts["progress_hooks"] = [progress_hook]
 
     project_config = _load_project_config()
     if project_config:
         rc = project_config.CONFIG.get("remote_components")
         if rc:
-            ydl_opts["remote_components"] = rc
-            logger.debug(f"Using remote_components: {rc}")
+            # A API yt-dlp espera uma lista de strings, não uma string única.
+            if isinstance(rc, str):
+                ydl_opts["remote_components"] = [rc]
+            else:
+                ydl_opts["remote_components"] = rc
+            logger.debug(
+                "Using remote_components=%r (type=%s)",
+                ydl_opts["remote_components"],
+                type(ydl_opts["remote_components"]).__name__,
+            )
 
     try:
         with YoutubeDL(ydl_opts) as ydl:

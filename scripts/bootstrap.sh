@@ -30,7 +30,7 @@ mkdir -p "$(dirname "$BOOTSTRAP_LOG")"
   echo "=== SimpleDL Bootstrap Log ==="
   echo "Start time: $(date)"
   echo "System: $(uname -s) $(uname -m)"
-  echo "Python: $PYTHON ($(python --version 2>&1))"
+  echo "Python: $PYTHON ($($PYTHON --version 2>&1))"
   echo "Working directory: $ROOT_DIR"
   echo ""
   echo "[STEP 1] Checking Python..."
@@ -49,15 +49,32 @@ mkdir -p "$(dirname "$BOOTSTRAP_LOG")"
     echo ""
     echo "[STEP 4] Upgrading pip..."
     pip install -U pip 2>&1 | tail -1
+    if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+      echo "[ERROR] Failed to upgrade pip"
+      exit 1
+    fi
     echo "[OK] Pip upgraded"
     echo ""
     echo "[STEP 5] Installing requirements..."
-    pip install -r requirements.txt
+    if ! pip install -r requirements.txt; then
+      echo "[ERROR] Failed to install requirements. See output above."
+      exit 1
+    fi
     echo "[OK] Requirements installed"
   else
     echo "[STEP 2] Installing requirements globally..."
     pip install -U pip 2>&1 | tail -1
-    pip install -r requirements.txt
+    if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+      echo "[ERROR] Failed to upgrade pip"
+      exit 1
+    fi
+    if ! pip install -r requirements.txt; then
+      echo "[ERROR] Failed to install requirements."
+      echo "[HINT] If you see 'externally-managed-environment', re-run this script"
+      echo "       choosing 'Y' to use a virtualenv, or run:"
+      echo "       pip install -r requirements.txt --break-system-packages"
+      exit 1
+    fi
     echo "[OK] Requirements installed"
   fi
   echo ""
@@ -71,7 +88,7 @@ mkdir -p "$(dirname "$BOOTSTRAP_LOG")"
   echo ""
 
   echo "[STEP 7] Checking yt-dlp..."
-  if python -c "import yt_dlp; print(yt_dlp.__version__)" 2>/dev/null; then
+  if $PYTHON -c "import yt_dlp; print(yt_dlp.__version__)" 2>/dev/null; then
     echo "[OK] yt-dlp available"
   else
     echo "[ERROR] yt-dlp not installed in active environment"
@@ -81,7 +98,12 @@ mkdir -p "$(dirname "$BOOTSTRAP_LOG")"
   echo "End time: $(date)"
   echo "=== Bootstrap Complete ==="
 } | tee "$BOOTSTRAP_LOG"
+BOOTSTRAP_STATUS="${PIPESTATUS[0]}"
 
 echo ""
+if [ "$BOOTSTRAP_STATUS" -ne 0 ]; then
+  echo "Bootstrap failed. See log for details: $BOOTSTRAP_LOG"
+  exit "$BOOTSTRAP_STATUS"
+fi
 echo "Bootstrap log saved to: $BOOTSTRAP_LOG"
 echo "Next: Review config.example.yml and create config.yml if needed"
